@@ -42,7 +42,7 @@ class TimeSeriesPredictor:
         # 推論モードに設定
         FastLanguageModel.for_inference(self.model)
 
-        print("モデルロード完了")
+        print("✓ モデルロード完了")
 
     def create_prompt(self, timestamps: list[str], values: list[float]) -> str:
         """
@@ -188,6 +188,80 @@ class TimeSeriesPredictor:
             )
 
         return predictions
+
+    def predict_with_chat_template(
+        self,
+        time_series: list[float],
+        system_prompt: str | None = None,
+        max_new_tokens: int = 256,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+    ) -> tuple[str, str]:
+        """
+        チャットテンプレートを使用して時系列データから予測を生成
+
+        Args:
+            time_series: 時系列データのリスト
+            system_prompt: システムプロンプト（Noneの場合はデフォルト）
+            max_new_tokens: 最大生成トークン数
+            temperature: 生成時の温度パラメータ
+            top_p: Top-pサンプリングパラメータ
+
+        Returns:
+            (生成されたレスポンス, 使用したプロンプト)のタプル
+        """
+        # デフォルトのシステムプロンプト
+        if system_prompt is None:
+            system_prompt = "あなたは時系列データを分析し、未来の値を予測する専門家です。与えられたデータから傾向やパターンを見つけ出し、日本語で推論過程を説明してください。"
+
+        # ユーザープロンプト
+        user_prompt = f"""以下の時系列データの次の値を予測してください:
+
+データ: {time_series}
+
+ステップ:
+1. データの傾向を分析
+2. パターンを特定
+3. 次の値を予測
+4. 予測根拠を説明"""
+
+        # チャットテンプレートを適用
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        prompt = self.tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=False
+        )
+
+        # トークン化
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+
+        # 生成
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                do_sample=True,
+                pad_token_id=self.tokenizer.eos_token_id,
+            )
+
+        # デコード
+        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=False)
+
+        # レスポンス部分のみ抽出
+        if "<|im_start|>assistant" in generated_text:
+            response = generated_text.split("<|im_start|>assistant")[-1].strip()
+            response = response.replace("<|im_end|>", "").strip()
+        else:
+            response = generated_text
+
+        return response, prompt
 
     def save_predictions(self, predictions: list[dict[str, Any]], output_path: Path) -> None:
         """
