@@ -23,7 +23,6 @@ from trl import GRPOConfig, GRPOTrainer
 # プロジェクトルートをパスに追加
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.reward_function import create_reward_function
 from src.reward_functions import (
     match_format_exactly,
     match_format_approximately,
@@ -45,7 +44,6 @@ class DeepSeekGRPOTrainer:
         self.config = config
         self.model = None
         self.tokenizer = None
-        self.reward_function = None
 
     def load_model(self) -> None:
         """Unslothを使用してモデルとトークナイザーをロード"""
@@ -162,29 +160,6 @@ class DeepSeekGRPOTrainer:
             dataset = dataset.remove_columns(["prompt_length"])
 
         return dataset
-
-    def setup_reward_function(self) -> None:
-        """報酬関数のセットアップ"""
-        print("報酬関数をセットアップ中...")
-        self.reward_function = create_reward_function(self.config)
-        print("✓ 報酬関数セットアップ完了")
-
-    def compute_reward(self, samples: list[str], true_values: list[float]) -> list[float]:
-        """
-        サンプルに対して報酬を計算
-
-        Args:
-            samples: 生成されたテキストのリスト
-            true_values: 正解値のリスト
-
-        Returns:
-            報酬のリスト
-        """
-        rewards = self.reward_function.batch_calculate_rewards(
-            generated_texts=samples,
-            true_values=true_values,
-        )
-        return rewards
 
     def train(
         self,
@@ -355,9 +330,6 @@ def main() -> None:
 
     # LoRA設定
     trainer.setup_lora()
-
-    # 報酬関数セットアップ
-    trainer.setup_reward_function()
 
     # データセットロード
     train_dataset = trainer.load_dataset(Path(args.train_data))
