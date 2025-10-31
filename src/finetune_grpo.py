@@ -17,7 +17,7 @@ from typing import Any
 import torch
 import yaml
 from datasets import Dataset
-from transformers import TrainingArguments
+from transformers import BitsAndBytesConfig, TrainingArguments
 from trl import GRPOConfig, GRPOTrainer
 
 # プロジェクトルートをパスに追加
@@ -51,13 +51,35 @@ class DeepSeekGRPOTrainer:
 
         print(f"モデルをロード中: {model_config['name']}")
 
+        # QLoRA設定の準備
+        quantization_config = None
+        if model_config.get("use_qlora", False):
+            print("QLoRA設定を有効化中...")
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type=model_config.get("bnb_4bit_quant_type", "nf4"),
+                bnb_4bit_use_double_quant=model_config.get("bnb_4bit_use_double_quant", True),
+                bnb_4bit_compute_dtype=getattr(torch, model_config.get("bnb_4bit_compute_dtype", "bfloat16")),
+            )
+            print(f"✓ QLoRA設定: {quantization_config.bnb_4bit_quant_type}, double_quant={quantization_config.bnb_4bit_use_double_quant}")
+
         # Unslothの高速モデルロード
-        self.model, self.tokenizer = FastLanguageModel.from_pretrained(
-            model_name=model_config["name"],
-            max_seq_length=model_config.get("max_seq_length", 2048),
-            dtype=model_config.get("dtype", None),
-            load_in_4bit=model_config.get("load_in_4bit", True),
-        )
+        if quantization_config:
+            # QLoRA有効時はquantization_configを使用
+            self.model, self.tokenizer = FastLanguageModel.from_pretrained(
+                model_name=model_config["name"],
+                max_seq_length=model_config.get("max_seq_length", 2048),
+                dtype=None,  # quantization_configが優先
+                load_in_4bit=True,
+            )
+        else:
+            # QLoRA無効時は従来の設定
+            self.model, self.tokenizer = FastLanguageModel.from_pretrained(
+                model_name=model_config["name"],
+                max_seq_length=model_config.get("max_seq_length", 2048),
+                dtype=model_config.get("dtype", None),
+                load_in_4bit=model_config.get("load_in_4bit", True),
+            )
 
         print("✓ モデルロード完了")
 
@@ -185,6 +207,7 @@ class DeepSeekGRPOTrainer:
             num_train_epochs=training_config.get("num_train_epochs", 3),
             per_device_train_batch_size=training_config.get("per_device_train_batch_size", 1),
             gradient_accumulation_steps=training_config.get("gradient_accumulation_steps", 8),
+            max_steps=training_config.get("max_steps", None),
 
             # GRPO固有設定
             num_generations=grpo_config_dict.get("num_generations_per_prompt", 4),

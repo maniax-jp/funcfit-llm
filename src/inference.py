@@ -17,11 +17,11 @@ from unsloth import FastLanguageModel
 class TimeSeriesPredictor:
     """時系列予測クラス"""
 
-    def __init__(self, model_path: Path, max_seq_length: int = 2048) -> None:
+    def __init__(self, model_path: Path, max_seq_length: int = 16384) -> None:
         """
         Args:
             model_path: ファインチューニング済みモデルのパス
-            max_seq_length: 最大シーケンス長
+            max_seq_length: 最大シーケンス長（デフォルト: 16384）
         """
         self.model_path = model_path
         self.max_seq_length = max_seq_length
@@ -193,7 +193,7 @@ class TimeSeriesPredictor:
         self,
         time_series: list[float],
         system_prompt: str | None = None,
-        max_new_tokens: int = 256,
+        max_new_tokens: int = 4096,
         temperature: float = 0.7,
         top_p: float = 0.9,
     ) -> tuple[str, str]:
@@ -203,7 +203,7 @@ class TimeSeriesPredictor:
         Args:
             time_series: 時系列データのリスト
             system_prompt: システムプロンプト（Noneの場合はデフォルト）
-            max_new_tokens: 最大生成トークン数
+            max_new_tokens: 最大生成トークン数（デフォルト: 4096）
             temperature: 生成時の温度パラメータ
             top_p: Top-pサンプリングパラメータ
 

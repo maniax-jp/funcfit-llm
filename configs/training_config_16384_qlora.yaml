@@ -1,18 +1,18 @@
-# テスト用GRPO学習設定（小規模）
+# シーケンス長16384用GRPO学習設定（QLoRA有効）
 
 model:
   name: "unsloth/DeepSeek-R1-0528-Qwen3-8B"
-  max_seq_length: 1024  # プロンプトが長いため拡張
+  max_seq_length: 16384  # シーケンス長を16384に拡張
   load_in_4bit: true
   dtype: "float16"
   # QLoRA設定（VRAM削減）
   use_qlora: true
-  bnb_4bit_quant_type: "nf4"  # NF4量子化
-  bnb_4bit_use_double_quant: true  # Double量子化
-  bnb_4bit_compute_dtype: "bfloat16"  # 計算時の精度
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: "bfloat16"
 
 lora:
-  r: 16  # テスト用に削減
+  r: 16
   target_modules:
     - "q_proj"
     - "k_proj"
@@ -24,7 +24,7 @@ lora:
   use_gradient_checkpointing: true
 
 grpo:
-  num_generations_per_prompt: 2  # テスト用に削減
+  num_generations_per_prompt: 2
   kl_penalty:
     beta: 0.05
   advantage:
@@ -32,17 +32,17 @@ grpo:
     whitening: true
 
 training:
-  output_dir: "./models/test_grpo_checkpoint"
-  num_train_epochs: 1  # テスト用に1エポック
+  output_dir: "./models/seq16384_qlora_checkpoint"
+  num_train_epochs: 1
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 2  # テスト用に削減
+  gradient_accumulation_steps: 2
   learning_rate: 2.0e-5
-  warmup_steps: 5  # テスト用に削減
+  warmup_steps: 5
   logging_steps: 1
   save_steps: 10
   eval_steps: 10
-  max_steps: 10  # テスト用に10ステップのみ
+  max_steps: 10
   fp16: true
   optim: "adamw_8bit"
   gradient_checkpointing: true
