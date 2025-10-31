@@ -11,8 +11,10 @@ DeepSeek-R1モデルをUnslothライブラリを使用してファインチュ�
 - 🚀 **GRPO強化学習**: 複数報酬関数による精密な学習制御
 - 🇯🇵 **日本語推論**: langidによる言語検出で日本語回答を強制
 - 🤔 **構造化思考**: `<think>`タグによる推論プロセスの可視化
-- ⚡ **高速・省メモリ**: Unsloth + 4-bit量子化で8-12GB VRAMで動作
+- ⚡ **高速・省メモリ**: Unsloth + QLoRA + 4-bit量子化で効率的に動作
 - 📊 **報酬スコア+8.0**: 1300%以上の改善を達成
+- 📈 **可視化機能**: matplotlibによる予測結果のグラフ生成
+- 🎯 **最適化済み**: シーケンス長16Kで詳細な推論プロセス生成
 
 ## 🏗️ プロジェクト構造
 
@@ -103,13 +105,22 @@ docker compose run --rm funcfit-llm python src/dataset_builder.py \
 ### ステップ3: GRPOファインチューニング
 
 ```bash
+# テスト用設定（クイック動作確認、10ステップ・1エポック）
 docker compose run --rm funcfit-llm python src/finetune_grpo.py \
     --config configs/training_config_test.yaml \
     --train-data data/grpo_processed/train.json \
     --val-data data/grpo_processed/val.json
+
+# 本番用設定（最適シーケンス長16K、3エポック、QLoRA有効）
+docker compose run --rm funcfit-llm python src/finetune_grpo.py \
+    --config configs/training_config_production.yaml \
+    --train-data data/grpo_processed/train.json \
+    --val-data data/grpo_processed/val.json
 ```
 
-**推定実行時間:** 小規模モデル(8B): 10-30分
+**推定実行時間:**
+- テスト用設定: 約10分（10ステップ、1エポック）
+- 本番用設定: 約7分（24ステップ、3エポック、69サンプル）
 
 ### ステップ4: 推論テスト
 
@@ -127,15 +138,25 @@ docker compose run --rm funcfit-llm python src/test_inference.py \
 
 # サンプルデータでテスト（検証データなしでも動作）
 docker compose run --rm funcfit-llm python src/test_inference.py --use-sample-data
+
+# 可視化付きテスト（グラフ生成）
+docker compose run --rm funcfit-llm python src/test_inference.py \
+    --model models/grpo_production \
+    --num-samples 5 \
+    --use-sample-data \
+    --save-plots outputs/predictions
 ```
 
 **オプション:**
 - `--model`: モデルパス（デフォルト: `models/test_grpo_checkpoint`）
 - `--val-data`: 検証データパス（デフォルト: `data/grpo_processed/val.json`）
 - `--num-samples`: テストするサンプル数（デフォルト: 3）
-- `--use-sample-data`: 組み込みサンプルデータを使用
+- `--use-sample-data`: 組み込みサンプルデータを使用（上昇・下降・周期・定数・ステップの5パターン）
+- `--save-plots`: グラフ保存先ディレクトリ（指定すると入力系列・予測値・真値を可視化）
 
-**出力:** 学習済みモデルによる日本語での推論プロセスと予測値
+**出力:**
+- 学習済みモデルによる日本語での推論プロセスと予測値
+- 可視化グラフ（`--save-plots`指定時）: 入力系列（青実線）、予測値（赤破線）、真値（緑実線）、誤差表示
 
 ## 🔧 主要な技術スタック
 
@@ -143,9 +164,11 @@ docker compose run --rm funcfit-llm python src/test_inference.py --use-sample-da
 - **ファインチューニング**:
   - Unsloth (2x高速化 + 70% VRAM削減)
   - GRPO (Group Relative Policy Optimization)
-  - LoRA/QLoRA (4-bit量子化)
+  - **QLoRA** (4-bit量子化 + LoRA、VRAM効率化)
+  - 最適シーケンス長: **16384トークン**（16K）
 - **深層学習フレームワーク**: PyTorch 2.8, Transformers 4.56
 - **データ処理**: Pandas, NumPy
+- **可視化**: **matplotlib** (予測結果グラフ生成), Noto Sans CJK (日本語フォント)
 - **言語検出**: langid
 - **コンテナ**: Docker + NVIDIA Docker Runtime
 - **実験管理**: TensorBoard
@@ -164,10 +187,24 @@ docker compose run --rm funcfit-llm python src/test_inference.py --use-sample-da
 
 ### トレーニング成果
 
+**初期テスト（シーケンス長2048、1エポック）:**
 - **報酬スコア改善**: -0.65 → **+8.0** (1300%以上の向上)
 - **安定性**: 全34ステップで一貫した+8.0スコア
 - **評価損失**: 1.24e-08 (極めて低い)
 - **学習時間**: 約10分 (69サンプル、1エポック)
+
+**本番設定（シーケンス長16384、3エポック + QLoRA）:**
+- **最終報酬スコア**: 7.5-8.28（平均8.0前後）
+- **学習時間**: 約7分（69サンプル、3エポック、24ステップ）
+- **学習可能パラメータ**: 15.3M / 8.2B (0.19%)
+- **GPU**: NVIDIA GeForce RTX 5090, 31.8 GB VRAM
+
+### シーケンス長最適化の成果
+
+Phase 2で2048/4096/8192/16384トークンを比較検証:
+- **最適値**: **16384トークン**を採用
+- **推論品質**: 詳細な`<think>`タグ推論プロセス（1500+トークン）を完全生成
+- **トークン使用量**: 入力528 + 出力最大4096 = 4624 ≪ 16384（十分な余裕）
 
 ### 特徴
 
@@ -175,6 +212,7 @@ docker compose run --rm funcfit-llm python src/test_inference.py --use-sample-da
 - ✅ `<think>`タグによる思考過程の構造化
 - ✅ チャットテンプレート + システムプロンプト
 - ✅ 90%分位点によるプロンプト長フィルタリング
+- ✅ 予測結果の可視化（matplotlib + Noto Sans CJK日本語フォント）
 
 ## 📈 時系列予測のアプローチ
 
@@ -205,24 +243,39 @@ docker compose run --rm funcfit-llm python src/test_inference.py --use-sample-da
 
 ## 📝 設定ファイル
 
-`configs/training_config.yaml`でファインチューニングパラメータを調整:
+### 本番用設定（`configs/training_config_production.yaml`）
+
+Phase 2-4の最適化結果を反映した本番用設定:
 
 ```yaml
 model:
-  name: "deepseek-ai/deepseek-r1"
+  name: "unsloth/DeepSeek-R1-0528-Qwen3-8B"
+  max_seq_length: 16384  # 最適シーケンス長（Phase 2検証済み）
   load_in_4bit: true
+  # QLoRA設定（VRAM削減）
+  use_qlora: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: "bfloat16"
 
 lora:
   r: 16
-  alpha: 16
-  target_modules: ["q_proj", "v_proj"]
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+  lora_alpha: 16
+  lora_dropout: 0.05
 
 training:
-  learning_rate: 2e-4
-  num_epochs: 3
-  batch_size: 4
-  gradient_accumulation_steps: 4
+  output_dir: "./models/grpo_production"
+  num_train_epochs: 3
+  gradient_accumulation_steps: 8  # 実効バッチサイズ8
+  learning_rate: 2.0e-5
+  fp16: true
+  optim: "adamw_8bit"
 ```
+
+### テスト用設定（`configs/training_config_test.yaml`）
+
+クイック動作確認用の軽量設定（10ステップ、1エポック）も用意されています。
 
 ## 🎯 評価メトリクス
 

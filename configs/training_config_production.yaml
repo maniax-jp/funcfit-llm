@@ -1,0 +1,70 @@
+# 本番用GRPO学習設定
+# Phase 2の実験結果に基づく最適設定（シーケンス長16384 + QLoRA）
+
+model:
+  name: "unsloth/DeepSeek-R1-0528-Qwen3-8B"
+  max_seq_length: 16384  # 実験結果から16384が最適と判明
+  load_in_4bit: true
+  dtype: "float16"
+  # QLoRA設定（VRAM削減）
+  use_qlora: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: "bfloat16"
+
+lora:
+  r: 16
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+  lora_alpha: 16
+  lora_dropout: 0.05
+  bias: "none"
+  use_gradient_checkpointing: true
+
+grpo:
+  num_generations_per_prompt: 2
+  kl_penalty:
+    beta: 0.05
+  advantage:
+    normalize: true
+    whitening: true
+
+training:
+  output_dir: "./models/grpo_production"
+  num_train_epochs: 3  # 本番学習用に3エポック
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 8  # 実効バッチサイズ8
+  learning_rate: 2.0e-5
+  warmup_steps: 10  # エポック数増加に伴い調整
+  logging_steps: 1
+  save_steps: 50  # チェックポイント頻度調整
+  eval_steps: 50
+  max_steps: -1  # エポック数で制御（制限なし）
+  fp16: true
+  optim: "adamw_8bit"
+  gradient_checkpointing: true
+  seed: 42
+  # 早期終了設定（オプション）
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+  save_total_limit: 3  # 最新3チェックポイントのみ保持
+
+reward_function:
+  weights:
+    accuracy: 0.6
+    format_correctness: 0.2
+    reasoning_quality: 0.2
+  thresholds:
+    excellent_accuracy: 0.05
+    good_accuracy: 0.15
+    poor_accuracy: 0.30
+
+data:
+  train_file: "./data/grpo_processed/train.json"
+  val_file: "./data/grpo_processed/val.json"
+  test_split: 0.1
