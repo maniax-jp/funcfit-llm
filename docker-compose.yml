@@ -1,0 +1,26 @@
+services:
+  funcfit-llm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: funcfit-llm:latest
+    container_name: funcfit-llm
+    runtime: nvidia
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - USER=appuser
+      - HOME=/tmp
+    volumes:
+      - .:/workspace
+    shm_size: '16gb'
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

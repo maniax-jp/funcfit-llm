@@ -1,0 +1,143 @@
+# DeepSeek-R1-0528-Qwen3-8B GRPO強化学習設定
+# Group Relative Policy Optimization (GRPO) による時系列予測モデル訓練
+
+# モデル設定
+model:
+  name: "unsloth/DeepSeek-R1-0528-Qwen3-8B"  # Unsloth最適化版DeepSeek-R1
+  max_seq_length: 2048  # 最大シーケンス長
+  load_in_4bit: true  # 4bitクォンタイゼーション（メモリ効率化）
+  dtype: "float16"  # データ型（float16またはbfloat16）
+
+# LoRA設定（ポリシーモデル用）
+lora:
+  r: 16  # LoRAランク（8, 16, 32から選択）
+  alpha: 16  # LoRAアルファ値（通常はrと同じ）
+  dropout: 0.05  # ドロップアウト率
+  bias: "none"  # バイアス項の学習設定
+  gradient_checkpointing: "unsloth"  # Unsloth最適化グラディエントチェックポイント
+
+  # ターゲットモジュール（Qwen3アーキテクチャ用）
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+# GRPO強化学習設定
+grpo:
+  # グループ設定
+  num_generations_per_prompt: 4  # 各プロンプトから生成する応答数（グループサイズ）
+
+  # 報酬モデル設定
+  reward_model:
+    type: "custom"  # 'custom'または'pretrained'
+    # pretrained_path: null  # 事前学習済み報酬モデルのパス（オプション）
+
+  # 生成設定
+  generation:
+    max_new_tokens: 256  # 最大生成トークン数
+    temperature: 0.7  # サンプリング温度（高いほど多様性増）
+    top_p: 0.9  # Top-pサンプリング
+    do_sample: true  # サンプリング有効化
+
+  # KLダイバージェンス制約
+  kl_penalty:
+    beta: 0.05  # KL係数（ポリシーの変化を制約）
+    target_kl: null  # ターゲットKL（自動調整の場合はnull）
+
+  # 利点計算
+  advantage:
+    normalize: true  # 利点の正規化
+    whitening: true  # ホワイトニング（分散を1に）
+
+# トレーニング設定
+training:
+  # 基本設定
+  num_train_epochs: 3  # エポック数
+  per_device_train_batch_size: 1  # デバイスあたりの訓練バッチサイズ
+  per_device_eval_batch_size: 1  # デバイスあたりの評価バッチサイズ
+  gradient_accumulation_steps: 8  # 勾配累積ステップ（実質バッチサイズ = 1 * 8 = 8）
+
+  # 最適化設定
+  learning_rate: 5.0e-6  # 学習率（GRPOでは低めが推奨）
+  lr_scheduler_type: "cosine"  # 学習率スケジューラ
+  warmup_ratio: 0.1  # ウォームアップ比率
+  weight_decay: 0.01  # 重み減衰
+  max_grad_norm: 1.0  # 勾配クリッピング
+
+  # オプティマイザ
+  optim: "paged_adamw_8bit"  # メモリ効率的オプティマイザ
+
+  # 精度設定
+  bf16: false  # BFloat16（A100/H100で推奨）
+  fp16: true  # Float16（V100/RTX GPUで推奨）
+
+  # ロギング・保存
+  logging_steps: 10  # ログ出力間隔
+  save_steps: 100  # チェックポイント保存間隔
+  save_total_limit: 3  # 保存する最大チェックポイント数
+  eval_steps: 50  # 評価実行間隔
+  eval_strategy: "steps"  # 評価戦略
+
+  # 出力設定
+  output_dir: "models/deepseek-r1-qwen3-8b-grpo-timeseries"
+  logging_dir: "logs"
+  report_to: ["tensorboard"]  # ロギング先（tensorboard, wandb等）
+
+  # その他
+  seed: 3407  # 乱機シード（再現性）
+  dataloader_num_workers: 4  # データローダーのワーカー数
+
+# データ設定
+data:
+  sequence_length: 10  # 入力シーケンス長
+  prediction_horizon: 1  # 予測ホライズン
+  train_ratio: 0.8  # 訓練データの割合
+
+  # プロンプトテンプレート
+  prompt_template: "reasoning"  # 'reasoning', 'default', 'conversational'から選択
+
+# 報酬関数設定（時系列予測用）
+reward_function:
+  # 報酬の重み付け
+  weights:
+    accuracy: 0.6  # 予測精度（MAE、MSE等）
+    format_correctness: 0.2  # 出力形式の正しさ
+    reasoning_quality: 0.2  # 推論の質（思考チェーンの有無等）
+
+  # 精度評価設定
+  accuracy_metrics:
+    primary: "mae"  # 主要メトリクス（'mae', 'mse', 'rmse'）
+    threshold: 0.1  # 許容誤差（正規化スケール）
+
+  # ボーナス・ペナルティ
+  bonuses:
+    perfect_prediction: 1.0  # 完璧な予測へのボーナス
+    good_reasoning: 0.5  # 優れた推論へのボーナス
+
+  penalties:
+    format_error: -0.5  # 形式エラーへのペナルティ
+    invalid_output: -1.0  # 無効な出力へのペナルティ
+
+# 推論設定（評価用）
+inference:
+  max_new_tokens: 256
+  temperature: 0.3  # 評価時は低温度（決定的）
+  top_p: 0.9
+  do_sample: false  # 評価時は決定的生成
+
+# 実験設定
+experiment:
+  name: "grpo-timeseries-prediction"
+  description: "DeepSeek-R1-Qwen3-8B with GRPO for time series forecasting"
+  tags: ["grpo", "reinforcement-learning", "time-series", "deepseek-r1"]
+
+# ハイパーパラメータチューニング候補
+hyperparameter_search:
+  num_generations_per_prompt: [2, 4, 8]
+  kl_beta: [0.01, 0.05, 0.1]
+  learning_rate: [1.0e-6, 5.0e-6, 1.0e-5]
+  lora_r: [8, 16, 32]
