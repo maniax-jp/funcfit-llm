@@ -15,7 +15,7 @@ from pathlib import Path
 # プロジェクトルートをパスに追加
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.inference import TimeSeriesPredictor
+from src.inference import TimeSeriesPredictor, extract_number_from_response
 
 
 def main():
@@ -46,12 +46,25 @@ def main():
         action="store_true",
         help="検証データの代わりにサンプルデータを使用",
     )
+    parser.add_argument(
+        "--save-plots",
+        type=str,
+        default=None,
+        help="グラフを保存するディレクトリ（指定した場合、各テストケースのグラフを保存）",
+    )
 
     args = parser.parse_args()
 
     # TimeSeriesPredictorを初期化
     predictor = TimeSeriesPredictor(model_path=Path(args.model), max_seq_length=1024)
     predictor.load_model()
+
+    # プロット保存ディレクトリの準備
+    plots_dir = None
+    if args.save_plots:
+        plots_dir = Path(args.save_plots)
+        plots_dir.mkdir(parents=True, exist_ok=True)
+        print(f"グラフ保存先: {plots_dir}\n")
 
     # テストデータを読み込み
     test_data_path = Path(args.val_data)
@@ -116,6 +129,21 @@ def main():
             print("【モデルの出力】")
             print(response)
             print("=" * 80)
+
+            # グラフ保存（オプション）
+            if plots_dir:
+                predicted_value = extract_number_from_response(response)
+                if predicted_value is not None:
+                    output_path = plots_dir / f"test_case_{i}_{test_case['name']}.png"
+                    predictor.visualize_prediction(
+                        input_series=test_case['data'],
+                        predicted_value=predicted_value,
+                        true_value=test_case['expected'],
+                        output_path=output_path,
+                        title=f"テストケース {i}: {test_case['name']}",
+                    )
+                else:
+                    print(f"⚠️ 予測値を抽出できませんでした（テストケース {i}）")
 
     print("\n✓ 推論テスト完了")
 

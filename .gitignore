@@ -99,3 +99,6 @@ temp/
 
 # Unsloth compiled cache
 unsloth_compiled_cache/
+
+# 出力ファイル（グラフなど）
+outputs/
