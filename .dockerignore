@@ -32,3 +32,6 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Unsloth compiled cache
+unsloth_compiled_cache/
