@@ -5,9 +5,12 @@ GRPO学習済みモデルの推論テストスクリプト
 時系列データから未来値を予測し、推論プロセスを表示します。
 """
 
+import argparse
+import json
+import re
 import sys
 from pathlib import Path
-import json
+
 import torch
 from unsloth import FastLanguageModel
 
@@ -89,32 +92,59 @@ def generate_prediction(model, tokenizer, time_series: list, system_prompt: str 
 
 def main():
     """メイン実行関数"""
+    parser = argparse.ArgumentParser(
+        description="GRPO学習済みモデルの推論テスト"
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="models/test_grpo_checkpoint",
+        help="学習済みモデルのパス（デフォルト: models/test_grpo_checkpoint）",
+    )
+    parser.add_argument(
+        "--val-data",
+        type=str,
+        default="data/grpo_processed/val.json",
+        help="検証データのパス（デフォルト: data/grpo_processed/val.json）",
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=3,
+        help="テストするサンプル数（デフォルト: 3）",
+    )
+    parser.add_argument(
+        "--use-sample-data",
+        action="store_true",
+        help="検証データの代わりにサンプルデータを使用",
+    )
+
+    args = parser.parse_args()
 
     # モデルパス
-    model_path = "models/test_grpo_checkpoint"
+    model_path = args.model
 
     # モデルとトークナイザーをロード
     model, tokenizer = load_model_and_tokenizer(model_path)
 
     # テストデータを読み込み
-    test_data_path = Path("data/grpo_processed/val.json")
+    test_data_path = Path(args.val_data)
 
-    if test_data_path.exists():
+    if test_data_path.exists() and not args.use_sample_data:
         with open(test_data_path, "r", encoding="utf-8") as f:
             test_data = json.load(f)
 
-        print(f"\n検証データから {min(3, len(test_data))} サンプルをテスト\n")
+        num_samples = min(args.num_samples, len(test_data))
+        print(f"\n検証データから {num_samples} サンプルをテスト\n")
         print("=" * 80)
 
-        for i, sample in enumerate(test_data[:3], 1):
+        for i, sample in enumerate(test_data[:num_samples], 1):
             print(f"\n【テストケース {i}】")
             print(f"真値: {sample['target_values'][0]}")
             print(f"入力: {sample['instruction'][:100]}...")
             print("-" * 80)
 
-            # 時系列データを抽出（簡易版）
-            # 実際のデータ形式に応じて調整が必要
-            import re
+            # 時系列データを抽出
             numbers = re.findall(r"[-+]?\d*\.\d+|\d+", sample['instruction'])
             time_series = [float(n) for n in numbers[:10]]  # 最初の10個
 

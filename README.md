@@ -113,9 +113,27 @@ docker compose run --rm funcfit-llm python src/finetune_grpo.py \
 
 ### ステップ4: 推論テスト
 
+学習済みモデルの動作確認を行います。
+
 ```bash
+# デフォルト設定（models/test_grpo_checkpoint, 3サンプル）
 docker compose run --rm funcfit-llm python src/test_inference.py
+
+# カスタム設定
+docker compose run --rm funcfit-llm python src/test_inference.py \
+    --model models/custom_model \
+    --val-data data/grpo_processed/val.json \
+    --num-samples 5
+
+# サンプルデータでテスト（検証データなしでも動作）
+docker compose run --rm funcfit-llm python src/test_inference.py --use-sample-data
 ```
+
+**オプション:**
+- `--model`: モデルパス（デフォルト: `models/test_grpo_checkpoint`）
+- `--val-data`: 検証データパス（デフォルト: `data/grpo_processed/val.json`）
+- `--num-samples`: テストするサンプル数（デフォルト: 3）
+- `--use-sample-data`: 組み込みサンプルデータを使用
 
 **出力:** 学習済みモデルによる日本語での推論プロセスと予測値
 
