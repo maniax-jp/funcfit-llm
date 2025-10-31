@@ -21,13 +21,12 @@ funcfit-llm/
 ├── src/                          # メインソースコード
 │   ├── reward_functions/         # GRPO報酬関数
 │   │   └── grpo_rewards.py       # 5つの専門報酬関数
-│   ├── data_preprocessing.py     # データ前処理モジュール
-│   ├── dataset_builder.py        # GRPO用データセット作成
-│   └── inference.py              # 推論パイプライン
-├── scripts/                      # 実行スクリプト
 │   ├── finetune_grpo.py          # GRPOファインチューニング
 │   ├── test_inference.py         # 推論テスト
-│   └── evaluate.py               # モデル評価スクリプト
+│   ├── evaluate.py               # モデル評価
+│   ├── data_preprocessing.py     # データ前処理
+│   ├── dataset_builder.py        # GRPO用データセット作成
+│   └── inference.py              # 推論パイプライン
 ├── notebooks/                    # Jupyter実験ノートブック
 │   └── experiment.ipynb          # 実験・分析用ノートブック
 ├── configs/                      # 設定ファイル
@@ -104,7 +103,7 @@ docker compose run --rm funcfit-llm python src/dataset_builder.py \
 ### ステップ3: GRPOファインチューニング
 
 ```bash
-docker compose run --rm funcfit-llm python scripts/finetune_grpo.py \
+docker compose run --rm funcfit-llm python src/finetune_grpo.py \
     --config configs/training_config_test.yaml \
     --train-data data/grpo_processed/train.json \
     --val-data data/grpo_processed/val.json
@@ -115,7 +114,7 @@ docker compose run --rm funcfit-llm python scripts/finetune_grpo.py \
 ### ステップ4: 推論テスト
 
 ```bash
-docker compose run --rm funcfit-llm python scripts/test_inference.py
+docker compose run --rm funcfit-llm python src/test_inference.py
 ```
 
 **出力:** 学習済みモデルによる日本語での推論プロセスと予測値

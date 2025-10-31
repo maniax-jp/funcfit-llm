@@ -308,9 +308,9 @@ training:
 
 2. 勾配クリッピングを有効化:
 
-`scripts/finetune.py`に追加:
+`src/finetune_grpo.py`のGRPOConfig設定に追加:
 ```python
-training_args = TrainingArguments(
+grpo_config = GRPOConfig(
     ...
     max_grad_norm=1.0,  # 追加
 )
@@ -394,13 +394,13 @@ torch.cuda.empty_cache()
 ### 1. 詳細なエラーログを取得
 
 ```bash
-CUDA_LAUNCH_BLOCKING=1 uv run python scripts/finetune.py ...
+docker compose run --rm funcfit-llm bash -c "CUDA_LAUNCH_BLOCKING=1 python src/finetune_grpo.py ..."
 ```
 
 ### 2. Pythonデバッガーを使用
 
 ```bash
-uv run python -m pdb scripts/finetune.py ...
+docker compose run --rm funcfit-llm python -m pdb src/finetune_grpo.py ...
 ```
 
 ### 3. 簡略版でテスト
