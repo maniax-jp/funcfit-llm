@@ -21,16 +21,19 @@ class TimeSeriesDatasetBuilder:
         sequence_length: int = 10,
         prediction_horizon: int = 1,
         prompt_template: str = "default",
+        stride: int | None = None,
     ) -> None:
         """
         Args:
             sequence_length: 入力シーケンスの長さ
             prediction_horizon: 予測する未来のステップ数
             prompt_template: 使用するプロンプトテンプレート
+            stride: スライディングウィンドウのストライド（None=prediction_horizon // 2）
         """
         self.sequence_length = sequence_length
         self.prediction_horizon = prediction_horizon
         self.prompt_template = prompt_template
+        self.stride = stride if stride is not None else max(1, prediction_horizon // 2)
 
     def create_prompt(
         self, timestamps: list[str], values: list[float], context: str = ""
@@ -68,8 +71,31 @@ class TimeSeriesDatasetBuilder:
             prompt += f"\nこのトレンドから、次の値を予測してください。"
 
         elif self.prompt_template == "numeric_only":
-            prompt = "数値シーケンス: " + ", ".join([f"{v:.4f}" for v in values])
-            prompt += f"\n次の{self.prediction_horizon}個の値を予測してください。"
+            # Few-shot学習用の例を含む改善版プロンプト
+            input_str = ", ".join([f"{v:.4f}" for v in values])
+
+            prompt = f"""あなたは時系列予測の専門家です。以下の形式に厳密に従って予測を行ってください。
+
+## 出力形式の例
+
+入力: 0.3188, 0.3076, 0.3090, 0.3118
+出力:
+<think>
+[自由に推論してください]
+</think>
+
+予測結果（4点）:
+0.3100, 0.3085, 0.3095, 0.3110
+
+---
+
+## あなたのタスク
+
+入力系列({len(values)}点): {input_str}
+
+必ず上記の形式に従い、<think>タグで自由に分析を行った後、
+「予測結果（{self.prediction_horizon}点）:」に続けてカンマ区切りの数値列のみを
+{self.prediction_horizon}個出力してください。"""
 
         elif self.prompt_template == "reasoning":
             # GRPO用の推論促進テンプレート
@@ -106,7 +132,13 @@ class TimeSeriesDatasetBuilder:
             生成された応答
         """
         if self.prompt_template == "numeric_only":
-            response = ", ".join([f"{v:.4f}" for v in values])
+            # <think>タグ付きの応答形式
+            response = f"""<think>
+[推論プロセス]
+</think>
+
+予測結果（{len(values)}点）:
+{", ".join([f"{v:.4f}" for v in values])}"""
         else:
             response = ""
             for ts, val in zip(timestamps, values):
@@ -139,7 +171,8 @@ class TimeSeriesDatasetBuilder:
         # シーケンス長 + 予測ホライズンのウィンドウでスライド
         window_size = self.sequence_length + self.prediction_horizon
 
-        for i in range(len(df) - window_size + 1):
+        # ストライドを使ってオーバーラップするウィンドウを生成
+        for i in range(0, len(df) - window_size + 1, self.stride):
             # 入力部分
             input_window = df.iloc[i : i + self.sequence_length]
             input_timestamps = input_window[timestamp_col].astype(str).tolist()
@@ -171,6 +204,9 @@ class TimeSeriesDatasetBuilder:
             )
 
         print(f"データセット構築完了: {len(dataset)} サンプル")
+        print(f"  シーケンス長: {self.sequence_length}")
+        print(f"  予測長: {self.prediction_horizon}")
+        print(f"  ストライド: {self.stride}")
         return dataset
 
     def save_dataset(
@@ -236,6 +272,9 @@ def main() -> None:
         "--prediction-horizon", type=int, default=1, help="予測ホライズン"
     )
     parser.add_argument(
+        "--stride", type=int, default=None, help="ストライド（デフォルト: prediction_horizon // 2）"
+    )
+    parser.add_argument(
         "--prompt-template",
         type=str,
         choices=["default", "conversational", "numeric_only", "reasoning"],
@@ -264,6 +303,7 @@ def main() -> None:
         sequence_length=args.sequence_length,
         prediction_horizon=args.prediction_horizon,
         prompt_template=args.prompt_template,
+        stride=args.stride,
     )
 
     # データセット構築

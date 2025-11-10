@@ -1,0 +1,56 @@
+# ETTデータセット用256×96予測設定（検証用）
+model:
+  name: "unsloth/DeepSeek-R1-0528-Qwen3-8B"
+  max_seq_length: 32768  # 入力16K + 出力16K
+  load_in_4bit: true
+  use_qlora: true
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_use_double_quant: true
+  bnb_4bit_compute_dtype: "bfloat16"
+
+lora:
+  r: 16
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+  lora_alpha: 16
+  lora_dropout: 0.05
+
+data:
+  dataset_name: "ett"
+  variant: "h1"
+  sequence_length: 256
+  prediction_horizon: 96
+  prompt_template: "numeric_only"
+  stride: 16  # サンプル数を大幅に増やす（48 -> 16）
+
+grpo:
+  num_generations_per_prompt: 2
+  generation:
+    max_new_tokens: 16384  # 出力16Kトークンをサポート
+    temperature: 0.7
+    top_p: 0.9
+  reward_weights:
+    format_exactness: 0.70  # フォーマット遵守を最優先（さらに強化）
+    prediction_accuracy: 0.25
+    language_quality: 0.05
+
+training:
+  output_dir: "./models/ett_grpo_256"
+  num_train_epochs: 5  # エポック数を増やしてフォーマット学習を強化
+  max_steps: -1  # エポック数で制御
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 2  # num_generationsで割り切れる値
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-5
+  warmup_steps: 10
+  logging_steps: 1
+  save_strategy: "epoch"
+  save_total_limit: 3
+  evaluation_strategy: "no"  # 評価ループのバグ回避のため無効化
+  load_best_model_at_end: false
+  fp16: true
+  optim: "adamw_8bit"
+  gradient_checkpointing: true
+
+evaluation:
+  metrics: ["mae", "rmse", "r2"]
+  segment_size: 32

@@ -5,6 +5,17 @@ Group Relative Policy Optimization (GRPO) を使用して
 時系列予測タスクでモデルを強化学習します。
 """
 
+# 環境変数設定（警告抑制）
+import os
+os.environ['HF_HOME'] = os.environ.get('HF_HOME', '/tmp/.cache/huggingface')
+os.environ['TRANSFORMERS_CACHE'] = os.environ['HF_HOME']
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
+# 警告フィルター
+import warnings
+warnings.filterwarnings('ignore', category=FutureWarning, module='transformers.utils.hub')
+warnings.filterwarnings('ignore', message='Unrecognized keys')
+
 # Unslothを最初にインポート（最適化のため必須）
 from unsloth import FastLanguageModel, is_bfloat16_supported
 
@@ -206,6 +217,7 @@ class DeepSeekGRPOTrainer:
             output_dir=str(output_dir),
             num_train_epochs=training_config.get("num_train_epochs", 3),
             per_device_train_batch_size=training_config.get("per_device_train_batch_size", 1),
+            per_device_eval_batch_size=training_config.get("per_device_eval_batch_size", 1),
             gradient_accumulation_steps=training_config.get("gradient_accumulation_steps", 8),
             max_steps=training_config.get("max_steps", None),
 
@@ -215,7 +227,8 @@ class DeepSeekGRPOTrainer:
             # 最適化設定
             learning_rate=training_config.get("learning_rate", 5.0e-6),
             lr_scheduler_type=training_config.get("lr_scheduler_type", "cosine"),
-            warmup_ratio=training_config.get("warmup_ratio", 0.1),
+            warmup_steps=training_config.get("warmup_steps", 10),
+            warmup_ratio=training_config.get("warmup_ratio", 0.0),
             weight_decay=training_config.get("weight_decay", 0.01),
             max_grad_norm=training_config.get("max_grad_norm", 1.0),
 
@@ -231,8 +244,8 @@ class DeepSeekGRPOTrainer:
             save_steps=training_config.get("save_steps", 100),
             save_total_limit=training_config.get("save_total_limit", 3),
 
-            # 評価
-            eval_strategy=training_config.get("eval_strategy", "steps"),
+            # 評価（evaluation_strategyとeval_strategy両方をサポート）
+            eval_strategy=training_config.get("evaluation_strategy") or training_config.get("eval_strategy", "steps"),
             eval_steps=training_config.get("eval_steps", 50) if val_dataset else None,
 
             # その他

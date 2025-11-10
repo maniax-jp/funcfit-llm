@@ -5,6 +5,7 @@
 """
 
 import argparse
+import json
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -158,6 +159,166 @@ class TimeSeriesPreprocessor:
         print(f"シーケンス作成完了: X shape={X.shape}, y shape={y.shape}")
         return X, y
 
+    def load_ett_data(
+        self,
+        csv_path: Path,
+        timestamp_col: str = "date",
+        target_col: str = "OT"
+    ) -> pd.DataFrame:
+        """
+        ETTデータセットをロード
+
+        Args:
+            csv_path: ETT CSVファイルパス
+            timestamp_col: タイムスタンプ列名
+            target_col: 予測ターゲット列名
+
+        Returns:
+            ロード済みDataFrame
+
+        処理内容:
+        - date列をdatetime型に変換
+        - date列を時系列インデックスに設定
+        - OT列を浮動小数点数に変換
+        - 欠損値チェック（あればエラー）
+        """
+        print(f"ETTデータをロード中: {csv_path}")
+        df = pd.read_csv(csv_path)
+
+        # date列をdatetime型に変換
+        df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+
+        # date列を時系列インデックスに設定
+        df = df.set_index(timestamp_col)
+
+        # ターゲット列の型変換
+        df[target_col] = df[target_col].astype(float)
+
+        # 欠損値チェック
+        if df[target_col].isna().sum() > 0:
+            raise ValueError(f"{target_col}列に欠損値があります")
+
+        print(f"✓ ETTデータロード完了: {len(df)}サンプル, {len(df.columns)}列")
+        print(f"  時間範囲: {df.index[0]} ～ {df.index[-1]}")
+
+        return df
+
+    def normalize_data(
+        self,
+        df: pd.DataFrame,
+        method: str = "minmax",
+        feature_cols: list[str] | None = None
+    ) -> tuple[pd.DataFrame, dict]:
+        """
+        データの正規化
+
+        Args:
+            df: 入力DataFrame
+            method: 正規化方法（"minmax", "standard", "robust"）
+            feature_cols: 正規化する列名リスト（None=OT列のみ）
+
+        Returns:
+            (正規化済みDataFrame, スケーラー情報dict)
+
+        スケーラー情報の保存:
+        - method, min, max (minmaxの場合)
+        - method, mean, std (standardの場合)
+        - 推論時の逆変換に使用
+        """
+        if feature_cols is None:
+            feature_cols = ["OT"]
+
+        df_normalized = df.copy()
+        scaler_info = {"method": method, "features": {}}
+
+        print(f"データ正規化中: {method}方式")
+
+        for col in feature_cols:
+            if col not in df.columns:
+                print(f"⚠️ 列が見つかりません: {col}")
+                continue
+
+            if method == "minmax":
+                min_val = float(df[col].min())
+                max_val = float(df[col].max())
+                df_normalized[col] = (df[col] - min_val) / (max_val - min_val)
+                scaler_info["features"][col] = {
+                    "min": min_val,
+                    "max": max_val
+                }
+                print(f"  ✓ {col}: [{min_val:.4f}, {max_val:.4f}] → [0.0, 1.0]")
+
+            elif method == "standard":
+                mean_val = float(df[col].mean())
+                std_val = float(df[col].std())
+                df_normalized[col] = (df[col] - mean_val) / std_val
+                scaler_info["features"][col] = {
+                    "mean": mean_val,
+                    "std": std_val
+                }
+                print(f"  ✓ {col}: 平均={mean_val:.4f}, 標準偏差={std_val:.4f}")
+
+            elif method == "robust":
+                median_val = float(df[col].median())
+                q1 = float(df[col].quantile(0.25))
+                q3 = float(df[col].quantile(0.75))
+                iqr = q3 - q1
+                df_normalized[col] = (df[col] - median_val) / iqr
+                scaler_info["features"][col] = {
+                    "median": median_val,
+                    "iqr": iqr
+                }
+                print(f"  ✓ {col}: 中央値={median_val:.4f}, IQR={iqr:.4f}")
+
+            else:
+                raise ValueError(f"未対応の正規化方法: {method}")
+
+        return df_normalized, scaler_info
+
+    def split_train_val_test(
+        self,
+        df: pd.DataFrame,
+        train_months: int = 12,
+        val_months: int = 4,
+        test_months: int = 4
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        時系列データを訓練/検証/テストに分割
+
+        Args:
+            df: 入力DataFrame
+            train_months: 訓練データの月数
+            val_months: 検証データの月数
+            test_months: テストデータの月数
+
+        Returns:
+            (train_df, val_df, test_df)
+
+        分割方法:
+        - 時系列順に分割（リークなし）
+        - train: 最初の12ヶ月（約8,760サンプル）
+        - val: 次の4ヶ月（約2,920サンプル）
+        - test: 最後の4ヶ月（約2,920サンプル）
+        """
+        print("データを訓練/検証/テストに分割中...")
+
+        # 1ヶ月あたりのサンプル数を推定（時間粒度: 30日 × 24時間 = 720）
+        samples_per_month = 730  # 概算（平均30.4日/月 × 24時間）
+
+        train_size = train_months * samples_per_month
+        val_size = val_months * samples_per_month
+
+        # 時系列順に分割
+        train_df = df.iloc[:train_size]
+        val_df = df.iloc[train_size:train_size + val_size]
+        test_df = df.iloc[train_size + val_size:]
+
+        print(f"  ✓ 訓練データ: {len(train_df)}サンプル ({train_df.index[0]} ～ {train_df.index[-1]})")
+        print(f"  ✓ 検証データ: {len(val_df)}サンプル ({val_df.index[0]} ～ {val_df.index[-1]})")
+        print(f"  ✓ テストデータ: {len(test_df)}サンプル ({test_df.index[0]} ～ {test_df.index[-1]})")
+
+        return train_df, val_df, test_df
+
     def preprocess(
         self,
         filepath: Path,
@@ -201,35 +362,98 @@ def main() -> None:
     """コマンドライン実行用のメイン関数"""
     parser = argparse.ArgumentParser(description="時系列データの前処理")
     parser.add_argument("--input", type=str, required=True, help="入力CSVファイルのパス")
-    parser.add_argument("--output", type=str, required=True, help="出力CSVファイルのパス")
+    parser.add_argument("--output", type=str, required=True, help="出力ディレクトリのパス")
     parser.add_argument(
-        "--timestamp-col", type=str, default="timestamp", help="タイムスタンプ列名"
+        "--timestamp-col", type=str, default="date", help="タイムスタンプ列名（デフォルト: date）"
+    )
+    parser.add_argument(
+        "--target-col", type=str, default="OT", help="予測ターゲット列名（デフォルト: OT）"
     )
     parser.add_argument(
         "--value-cols",
         type=str,
         nargs="+",
-        default=["value"],
-        help="スケーリング対象の列名（複数指定可）",
+        default=None,
+        help="正規化対象の列名（複数指定可、デフォルト: target-colのみ）",
     )
     parser.add_argument(
-        "--scaling",
+        "--normalize",
         type=str,
-        choices=["minmax", "standard"],
+        choices=["minmax", "standard", "robust"],
         default="minmax",
-        help="スケーリング手法",
+        help="正規化手法（デフォルト: minmax）",
+    )
+    parser.add_argument(
+        "--ett-mode",
+        action="store_true",
+        help="ETTデータセット用のモード（訓練/検証/テスト分割を実行）"
     )
 
     args = parser.parse_args()
 
+    # 出力ディレクトリの作成
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # 前処理実行
-    preprocessor = TimeSeriesPreprocessor(scaling_method=args.scaling)
-    preprocessor.preprocess(
-        filepath=Path(args.input),
-        output_path=Path(args.output),
-        timestamp_col=args.timestamp_col,
-        value_columns=args.value_cols,
-    )
+    preprocessor = TimeSeriesPreprocessor(scaling_method=args.normalize)
+
+    if args.ett_mode:
+        # ETTモード: ロード → 正規化 → 分割
+        print("=== ETTデータセット前処理モード ===")
+
+        # 1. データロード
+        df = preprocessor.load_ett_data(
+            csv_path=Path(args.input),
+            timestamp_col=args.timestamp_col,
+            target_col=args.target_col
+        )
+
+        # 2. 正規化
+        value_cols = args.value_cols if args.value_cols else [args.target_col]
+        df_normalized, scaler_info = preprocessor.normalize_data(
+            df, method=args.normalize, feature_cols=value_cols
+        )
+
+        # 3. 訓練/検証/テスト分割
+        train_df, val_df, test_df = preprocessor.split_train_val_test(df_normalized)
+
+        # 4. 保存
+        # インデックス（date）をリセットして列として保存
+        train_df_reset = train_df.reset_index()
+        val_df_reset = val_df.reset_index()
+        test_df_reset = test_df.reset_index()
+
+        # ファイル名を入力から推測
+        input_name = Path(args.input).stem  # "ETTH1" など
+        train_path = output_dir / f"{input_name}_train.csv"
+        val_path = output_dir / f"{input_name}_val.csv"
+        test_path = output_dir / f"{input_name}_test.csv"
+        scaler_path = output_dir / f"{input_name}_scaler.json"
+
+        train_df_reset.to_csv(train_path, index=False)
+        val_df_reset.to_csv(val_path, index=False)
+        test_df_reset.to_csv(test_path, index=False)
+
+        # スケーラー情報をJSON保存
+        with open(scaler_path, "w") as f:
+            json.dump(scaler_info, f, indent=2, ensure_ascii=False)
+
+        print(f"\n✅ 前処理完了:")
+        print(f"  訓練データ: {train_path}")
+        print(f"  検証データ: {val_path}")
+        print(f"  テストデータ: {test_path}")
+        print(f"  スケーラー情報: {scaler_path}")
+
+    else:
+        # 通常モード: 既存の処理
+        value_cols = args.value_cols if args.value_cols else ["value"]
+        preprocessor.preprocess(
+            filepath=Path(args.input),
+            output_path=output_dir / Path(args.input).name,
+            timestamp_col=args.timestamp_col,
+            value_columns=value_cols,
+        )
 
 
 if __name__ == "__main__":
